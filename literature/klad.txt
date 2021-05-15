@@ -1,0 +1,288 @@
+# Original hough transform (SLOW)
+def hough(I, min_r, max_r, num_circles):
+    I = sobel(I)
+    m, n = I.shape[:2]
+    num_r = max_r - min_r + 1
+    max_a = m
+    max_b = n
+    print(max_a)
+    print(max_b)
+
+    Votes = np.zeros([max_a, max_b, num_r])
+
+    for a in range(1, max_a):
+        for b in range(1, max_b):
+            for r in range(1, num_r):
+                radius = r + min_r - 1
+                min_x = max(1, b-radius)
+                max_x = min(n, b+radius)
+                # print(min_x)
+                # print(max_x)
+                for x in range(min_x, max_x):
+                    # print(x)
+                    min_y = np.maximum(1, a-radius)
+                    max_y = np.minimum(m, a+radius)
+                    for y in range(min_y, max_y):
+                        if I[y, x] > 0:
+                            xL = x - 0.5
+                            xR = x + 0.5
+                            yT = y + 0.5
+                            yB = y - 0.5
+
+                            y1 = a + np.sqrt(math.pow(radius, 2) - math.pow(xL - b, 2))
+                            y2 = a - np.sqrt(math.pow(radius, 2) - math.pow(xL - b, 2))
+                            y3 = a + np.sqrt(math.pow(radius, 2) - math.pow(xR - b, 2))
+                            y4 = a - np.sqrt(math.pow(radius, 2) - math.pow(xR - b, 2))
+
+                            x1 = b + np.sqrt(math.pow(radius, 2) - math.pow(yT - a, 2))
+                            x2 = b - np.sqrt(math.pow(radius, 2) - math.pow(yT - a, 2))
+                            x3 = b + np.sqrt(math.pow(radius, 2) - math.pow(yB - a, 2))
+                            x4 = b - np.sqrt(math.pow(radius, 2) - math.pow(yB - a, 2))
+
+                            if yB < y1 < yT:
+                                Votes[a, b, r] = Votes[a, b, r] + 1
+                            elif yB < y2 < yT:
+                                Votes[a, b, r] = Votes[a, b, r] + 1
+                            elif yB < y3 < yT:
+                                Votes[a, b, r] = Votes[a, b, r] + 1
+                            elif yB < y4 < yT:
+                                Votes[a, b, r] = Votes[a, b, r] + 1
+                            elif xL < x1 < xR:
+                                Votes[a, b, r] = Votes[a, b, r] + 1
+                            elif xL < x2 < xR:
+                                Votes[a, b, r] = Votes[a, b, r] + 1
+                            elif xL < x3 < xR:
+                                # print('g')
+                                Votes[a, b, r] = Votes[a, b, r] + 1
+                            elif xL < x4 < xR:
+                                Votes[a, b, r] = Votes[a, b, r] + 1
+                        if I[y, x] >= 128 and ((math.pow(y-a, 2) + math.pow(x-b, 2)) == math.pow(radius, 2)):
+                             Votes[a, b, r] = Votes[a, b, r] + 1
+                # print('h')
+            print('i')
+        print('g')
+    # print(Votes)
+    return I
+
+def sobel(I):
+    grad_x = cv2.Sobel(I, cv2.CV_16S, 1, 0)
+    grad_y = cv2.Sobel(I, cv2.CV_16S, 0, 1)
+    abs_grad_x = cv2.convertScaleAbs(grad_x)
+    abs_grad_y = cv2.convertScaleAbs(grad_y)
+    grad = cv2.addWeighted(abs_grad_x, 0.5, abs_grad_y, 0.5, 0)
+    return grad
+
+    # Contours
+    # contours = cv2.findContours(img, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+    # contours_poly = [None] * len(contours)
+    # for i, c in enumerate(contours):
+    #     contours_poly[i] = cv2.approxPolyDP(c, 3, True)
+    # drawing = np.zeros((new_frame.shape[0], new_frame.shape[1], 3), dtype=np.uint8)
+    # for i in range(len(contours)):
+    #     cv2.drawContours(drawing, contours_poly, i, (0,0,255)
+    # cv2.drawContours(drawing, contours, 0, (0, 0, 255))
+    # cv2.imshow("image", drawing)
+    # cv2.waitKey()
+    # cv2.destroyAllWindows()
+
+@njit
+def jit_bfs(x, y, padded_image):
+    start = (x, y)
+    distances = np.full(padded_image.shape, np.inf)  # infinite
+    visited = set()
+    visited.add(start)
+    queue = [start]
+    distances[start] = 0
+    while queue:
+        xv, yv = queue.pop(0)
+        neighbours = [(xv - 1, yv), (xv + 1, yv), (xv, yv - 1), (xv, yv + 1)]
+        neighbours = [n for n in neighbours if padded_image[n] == 0]
+        for neighbour in neighbours:
+            if neighbour in visited:
+                continue
+            distances[neighbour] = distances[xv, yv] + 1
+            visited.add(neighbour)
+            queue.append(neighbour)
+
+    return distances
+
+
+def breath_first_search(x, y, image):
+    padded_image = np.pad(image, pad_width=1, mode='constant', constant_values=0)
+    padded_image = np.pad(padded_image, pad_width=1, mode='constant', constant_values=255)
+    distances = jit_bfs(x + 2, y + 2, padded_image)
+    return distances[2:-2, 2:-2]
+
+
+def path_distance(image):
+    h, b = image.shape
+    d1 = breath_first_search(0, 0, image)
+    d2 = breath_first_search(0, b - 1, image)
+    d3 = breath_first_search(h - 1, b - 1, image)
+    d4 = breath_first_search(h - 1, 0, image)
+    res = np.stack((d1, d2, d3, d4))
+    return res
+
+
+def manhattan_distance(image):
+    hoogte, breedte = image.shape
+    lijst = []
+    lijst.append([np.arange(i, breedte + i) for i in range(hoogte)])
+    lijst.append(np.fliplr(lijst[0]))
+    lijst.append(np.flipud(lijst[1]))
+    lijst.append(np.fliplr(lijst[2]))
+    return np.array(lijst)
+
+
+def excess_distance(image):
+    D = path_distance(image) - manhattan_distance(image)
+    D = D.transpose((1, 2, 0))
+    D = np.sort(D, axis=2)
+    D = D[:, :, 0:3]
+    D = np.sum(D, axis=2)
+    return D
+
+
+def segmentatie(image):
+    result = excess_distance(image) >= 3
+    return (255 * result).astype(np.uint8)
+
+
+    # fig = plt.figure()
+    # ax1 = fig.add_subplot(221)
+    # ax1.set_title("Red")
+    # ax2 = fig.add_subplot(222)
+    # ax2.set_title("Blue")
+    # ax3 = fig.add_subplot(223)
+    # ax3.set_title("White/Grey")
+    # ax4 = fig.add_subplot(224)
+    # ax4.set_title("Yellow/Orange")
+    # ax1.imshow(Rmask, cmap="gray")
+    # ax2.imshow(Bmask, cmap="gray")
+    # ax3.imshow(Wmask, cmap="gray")
+    # ax4.imshow(Ymask, cmap="gray")
+    # ax1.axis('off')
+    # ax2.axis('off')
+    # ax3.axis('off')
+    # ax4.axis('off')
+    # plt.tight_layout()
+    # plt.show()
+
+# EVAL ALL VIDEOS ##############################################################################################
+
+from testbench import *
+
+
+def main():
+    start = time.time()
+    print("dag/no_sign_x.mp4")
+    for i in range(1,4):
+        print("##################################################################################################################")
+        print("NO_sign_"+str(i)+".mp4")
+        print(i)
+        iterate_video_with_kalman("videos/dag/no_sign_"+str(i)+".mp4")
+        print("tijd vid "+str(i)+" :")
+        print(time.time() - start)
+        time.sleep(5)
+        start = time.time()
+
+    print("dag/one_sign_x.mp4")
+    time.sleep(5)
+    start = time.time()
+    for i in range(1,3):
+        print("##################################################################################################################")
+        print("ONE_sign_"+str(i)+".mp4")
+        iterate_video_with_kalman("videos/dag/one_sign_"+str(i)+".mp4")
+        print("tijd vid "+str(i)+" :")
+        print(time.time() - start)
+        time.sleep(5)
+        start = time.time()
+
+    print("dag/signs_x.mp4")
+    time.sleep(5)
+    start = time.time()
+    for i in range(1,5):
+        print("##################################################################################################################")
+        print("SIGNS"+str(i)+".mp4")
+        iterate_video_with_kalman("videos/dag/signs_"+str(i)+".mp4")
+        print("tijd vid "+str(i)+" :")
+        print(time.time() - start)
+        time.sleep(5)
+        start = time.time()
+
+
+    print("nacht/N_no_signs_x.mp4")
+    time.sleep(5)
+    start = time.time()
+    for i in range(1,4):
+        print("###################################################################################################################")
+        print("NO_sign_"+str(i)+".mp4")
+        iterate_video_with_kalman("videos/nacht/N_no_signs_"+str(i)+".mp4")
+        print("tijd vid "+str(i)+" :")
+        print(time.time() - start)
+        time.sleep(5)
+        start = time.time()
+
+    print("nacht/N_one_sign_x.mp4")
+    time.sleep(5)
+    start = time.time()
+    for i in range(1,3):
+        print("##################################################################################################################")
+        print("ONE_sign_"+str(i)+".mp4")
+        iterate_video_with_kalman("videos/nacht/N_one_sign_"+str(i)+".mp4")
+        print("tijd vid "+str(i)+" :")
+        print(time.time() - start)
+        time.sleep(5)
+        start = time.time()
+
+    print("nacht/N_signs_1.mp4")
+    time.sleep(5)
+    start = time.time()
+    iterate_video_with_kalman("videos/nacht/N_signs_1.mp4")
+    print("tijd vid :")
+    print(time.time() - start)
+
+    print("schemering/S_no_signx.mp4")
+    time.sleep(5)
+    start = time.time()
+    for i in range(1,4):
+        print("##################################################################################################################")
+        print("NO_sign_"+str(i)+".mp4")
+        iterate_video_with_kalman("videos/schemering/S_no_sign_"+str(i)+".mp4")
+        print("tijd vid "+str(i)+" :")
+        print(time.time() - start)
+        time.sleep(5)
+        start = time.time()
+
+    print("schemering/S_one_signx.mp4")
+    time.sleep(5)
+    start = time.time()
+    for i in range(1,3):
+        print("##################################################################################################################")
+        print("ONE_sign_"+str(i)+".mp4")
+        iterate_video_with_kalman("videos/schemering/S_one_sign_"+str(i)+".mp4")
+        print("tijd vid "+str(i)+" :")
+        print(time.time() - start)
+        time.sleep(5)
+        start = time.time()
+
+    print("schemering/S_sign_1.mp4")
+    time.sleep(5)
+    start = time.time()
+    iterate_video_with_kalman("videos/schemering/S_signs_1.mp4")
+    print("tijd vid :")
+    print(time.time() - start)
+
+
+
+
+
+
+
+
+
+
+
+if __name__ == "__main__":
+    main()
+    cv2.destroyAllWindows()
